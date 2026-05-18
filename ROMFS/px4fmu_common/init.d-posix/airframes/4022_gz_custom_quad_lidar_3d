@@ -1,0 +1,14 @@
+#!/bin/sh
+#
+# @name Gazebo custom quad lidar 3d
+#
+# @type Quadrotor
+#
+
+PX4_SIM_MODEL=${PX4_SIM_MODEL:=custom_quad_lidar_3d}
+
+. ${R}etc/init.d-posix/airframes/4001_gz_x500
+
+# This demo runs without QGroundControl. Keep RC/manual-control checks active,
+# but do not require a GCS datalink before arming.
+param set-default NAV_DLL_ACT 0
