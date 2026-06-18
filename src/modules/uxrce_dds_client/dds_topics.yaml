@@ -17,8 +17,9 @@ publications:
   # - topic: /fmu/out/battery_status
   #   type: px4_msgs::msg::BatteryStatus
 
-  # - topic: /fmu/out/esc_status
-  #   type: px4_msgs::msg::EscStatus
+  - topic: /fmu/out/esc_status
+    type: px4_msgs::msg::EscStatus
+    rate_limit: 400.
 
   # - topic: /fmu/out/collision_constraints
   #   type: px4_msgs::msg::CollisionConstraints
