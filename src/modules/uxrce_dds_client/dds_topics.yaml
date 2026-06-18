@@ -59,8 +59,8 @@ publications:
   # - topic: /fmu/out/vehicle_control_mode
   #   type: px4_msgs::msg::VehicleControlMode
 
-  # - topic: /fmu/out/vehicle_command_ack
-  #   type: px4_msgs::msg::VehicleCommandAck
+  - topic: /fmu/out/vehicle_command_ack
+    type: px4_msgs::msg::VehicleCommandAck
 
   # - topic: /fmu/out/vehicle_global_position
   #   type: px4_msgs::msg::VehicleGlobalPosition
@@ -74,8 +74,8 @@ publications:
   # - topic: /fmu/out/vehicle_odometry
   #   type: px4_msgs::msg::VehicleOdometry
 
-  # - topic: /fmu/out/vehicle_status
-  #   type: px4_msgs::msg::VehicleStatus
+  - topic: /fmu/out/vehicle_status
+    type: px4_msgs::msg::VehicleStatus
 
   # - topic: /fmu/out/airspeed_validated
   #   type: px4_msgs::msg::AirspeedValidated
@@ -115,8 +115,8 @@ subscriptions:
   # - topic: /fmu/in/manual_control_input
   #   type: px4_msgs::msg::ManualControlSetpoint
 
-  # - topic: /fmu/in/offboard_control_mode
-  #   type: px4_msgs::msg::OffboardControlMode
+  - topic: /fmu/in/offboard_control_mode
+    type: px4_msgs::msg::OffboardControlMode
 
   # - topic: /fmu/in/onboard_computer_status
   #   type: px4_msgs::msg::OnboardComputerStatus
@@ -148,8 +148,8 @@ subscriptions:
   # - topic: /fmu/in/vehicle_visual_odometry
   #   type: px4_msgs::msg::VehicleOdometry
 
-  # - topic: /fmu/in/vehicle_command
-  #   type: px4_msgs::msg::VehicleCommand
+  - topic: /fmu/in/vehicle_command
+    type: px4_msgs::msg::VehicleCommand
 
   # - topic: /fmu/in/vehicle_command_mode_executor
   #   type: px4_msgs::msg::VehicleCommand
@@ -160,8 +160,8 @@ subscriptions:
   # - topic: /fmu/in/vehicle_torque_setpoint
   #   type: px4_msgs::msg::VehicleTorqueSetpoint
 
-  # - topic: /fmu/in/actuator_motors
-  #   type: px4_msgs::msg::ActuatorMotors
+  - topic: /fmu/in/actuator_motors
+    type: px4_msgs::msg::ActuatorMotors
 
   # - topic: /fmu/in/actuator_servos
   #   type: px4_msgs::msg::ActuatorServos
