@@ -8,5 +8,7 @@ then
 	atxxxx start -s
 fi
 
-# DShot telemetry is always on UART7
-dshot telemetry -d /dev/ttyS5
+# Serial DShot telemetry is normally wired to UART7 on this board. Leave it
+# disabled for the Kakute H7 BDShot test build so bidirectional DShot telemetry
+# is the only ESC feedback path.
+# dshot telemetry -d /dev/ttyS5
