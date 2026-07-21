@@ -49,9 +49,7 @@
 
 // telemetry
 #include <uORB/Subscription.hpp>
-#include <uORB/topics/battery_status.h>
-#include <uORB/topics/vehicle_attitude.h>
-#include <uORB/topics/sensor_gps.h>
+#include <uORB/topics/debug_value.h>
 #include <uORB/topics/vehicle_status.h>
 
 using namespace device;
@@ -81,13 +79,6 @@ private:
 
 	input_rc_s _input_rc{};
 
-	bool SendTelemetryBattery(const uint16_t voltage, const uint16_t current, const int fuel, const uint8_t remaining);
-
-	bool SendTelemetryGps(const int32_t latitude, const int32_t longitude, const uint16_t groundspeed,
-			      const uint16_t gps_heading, const uint16_t altitude, const uint8_t num_satellites);
-
-	bool SendTelemetryAttitude(const int16_t pitch, const int16_t roll, const int16_t yaw);
-
 	bool SendTelemetryFlightMode(const char *flight_mode);
 
 	Serial *_uart = nullptr; ///< UART interface to RC
@@ -105,19 +96,21 @@ private:
 
 	// telemetry
 	hrt_abstime _telemetry_update_last{0};
-	static constexpr int num_data_types{4}; ///< number of different telemetry data types
-	int _next_type{0};
-	uORB::Subscription _battery_status_sub{ORB_ID(battery_status)};
-	uORB::Subscription _vehicle_attitude_sub{ORB_ID(vehicle_attitude)};
-	uORB::Subscription _vehicle_gps_position_sub{ORB_ID(vehicle_gps_position)};
+	static constexpr int8_t collision_warning_debug_index{42};
+	static constexpr hrt_abstime collision_warning_timeout{700000};
+	static constexpr hrt_abstime telemetry_interval_warning{20000};
+	static constexpr uint8_t collision_warning_clear_frames{10};
+	hrt_abstime _last_collision_warning_update{0};
+	int16_t _collision_warning_severity{0};
+	uint8_t _collision_warning_sequence{0};
+	uint8_t _collision_warning_clear_frames_remaining{0};
+	bool _collision_warning_was_active{false};
+	uORB::Subscription _debug_value_sub{ORB_ID(debug_value)};
 	uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
 
 	enum class crsf_frame_type_t : uint8_t {
-		gps = 0x02,
-		battery_sensor = 0x08,
 		link_statistics = 0x14,
 		rc_channels_packed = 0x16,
-		attitude = 0x1E,
 		flight_mode = 0x21,
 
 		// Extended Header Frames, range: 0x28 to 0x96
@@ -127,14 +120,6 @@ private:
 		parameter_read = 0x2C,
 		parameter_write = 0x2D,
 		command = 0x32
-	};
-
-	enum class crsf_payload_size_t : uint8_t {
-		gps = 15,
-		battery_sensor = 8,
-		link_statistics = 10,
-		rc_channels = 22, ///< 11 bits per channel * 16 channels = 22 bytes.
-		attitude = 6,
 	};
 
 	void WriteFrameHeader(uint8_t *buf, int &offset, const crsf_frame_type_t type, const uint8_t payload_size);

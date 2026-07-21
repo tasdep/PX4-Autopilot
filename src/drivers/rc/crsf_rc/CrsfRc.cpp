@@ -35,11 +35,10 @@
 #include "CrsfParser.hpp"
 #include "Crc8.hpp"
 
+#include <cstdio>
 #include <fcntl.h>
 
-#include <uORB/topics/battery_status.h>
-#include <uORB/topics/vehicle_attitude.h>
-#include <uORB/topics/sensor_gps.h>
+#include <uORB/topics/debug_value.h>
 #include <uORB/topics/vehicle_status.h>
 
 using namespace time_literals;
@@ -217,54 +216,36 @@ void CrsfRc::Run()
 			}
 		}
 
-		if (_param_rc_crsf_tel_en.get() && !_is_singlewire
-		    && (_input_rc.timestamp > _telemetry_update_last + 100_ms)) {
-			switch (_next_type) {
-			case 0:
-				battery_status_s battery_status;
+		if (_param_rc_crsf_tel_en.get() && !_is_singlewire) {
+			debug_value_s debug_value;
 
-				if (_battery_status_sub.update(&battery_status)) {
-					uint16_t voltage = battery_status.voltage_v * 10;
-					uint16_t current = battery_status.current_a * 10;
-					int fuel = battery_status.discharged_mah;
-					uint8_t remaining = battery_status.remaining * 100;
-					this->SendTelemetryBattery(voltage, current, fuel, remaining);
-				}
+			if (_debug_value_sub.update(&debug_value) && debug_value.ind == collision_warning_debug_index) {
+				const float severity = math::constrain(debug_value.value, 0.f, 3.f);
+				_last_collision_warning_update = hrt_absolute_time();
+				_collision_warning_severity = (int16_t)roundf(severity * 10.f);
+			}
 
-				break;
+			int16_t collision_warning_severity = _collision_warning_severity;
 
-			case 1:
-				sensor_gps_s sensor_gps;
+			if (_last_collision_warning_update == 0
+			    || hrt_elapsed_time(&_last_collision_warning_update) > collision_warning_timeout) {
+				collision_warning_severity = 0;
+			}
 
-				if (_vehicle_gps_position_sub.update(&sensor_gps)) {
-					int32_t latitude = static_cast<int32_t>(round(sensor_gps.latitude_deg * 1e7));
-					int32_t longitude = static_cast<int32_t>(round(sensor_gps.longitude_deg * 1e7));
-					uint16_t groundspeed = sensor_gps.vel_d_m_s / 3.6f * 10.f;
-					uint16_t gps_heading = math::degrees(sensor_gps.cog_rad) * 100.f;
-					uint16_t altitude = static_cast<int16_t>(sensor_gps.altitude_msl_m) + 1000;
-					uint8_t num_satellites = sensor_gps.satellites_used;
-					this->SendTelemetryGps(latitude, longitude, groundspeed, gps_heading, altitude, num_satellites);
-				}
+			if (collision_warning_severity > 0) {
+				_collision_warning_was_active = true;
+				_collision_warning_clear_frames_remaining = collision_warning_clear_frames;
 
-				break;
+			} else if (_collision_warning_was_active && _collision_warning_clear_frames_remaining == 0) {
+				_collision_warning_clear_frames_remaining = collision_warning_clear_frames;
+			}
 
-			case 2:
-				vehicle_attitude_s vehicle_attitude;
+			const bool send_warning_frame = collision_warning_severity > 0 || _collision_warning_clear_frames_remaining > 0;
 
-				if (_vehicle_attitude_sub.update(&vehicle_attitude)) {
-					matrix::Eulerf attitude = matrix::Quatf(vehicle_attitude.q);
-					int16_t pitch = attitude(1) * 1e4f;
-					int16_t roll = attitude(0) * 1e4f;
-					int16_t yaw = attitude(2) * 1e4f;
-					this->SendTelemetryAttitude(pitch, roll, yaw);
-				}
-
-				break;
-
-			case 3:
+			if (send_warning_frame && _input_rc.timestamp > _telemetry_update_last + telemetry_interval_warning) {
 				vehicle_status_s vehicle_status;
 
-				if (_vehicle_status_sub.update(&vehicle_status)) {
+				if (_vehicle_status_sub.copy(&vehicle_status)) {
 					const char *flight_mode = "(unknown)";
 
 					switch (vehicle_status.nav_state) {
@@ -321,14 +302,30 @@ void CrsfRc::Run()
 						flight_mode = "Unknown";
 					}
 
-					this->SendTelemetryFlightMode(flight_mode);
+					if (collision_warning_severity > 0) {
+						char warning_flight_mode[16] {};
+						const int severity_level = math::constrain((int)roundf(collision_warning_severity / 10.f), 1, 3);
+						_collision_warning_sequence = (_collision_warning_sequence + 1) % 10;
+						const char sequence_id = (char)('A' + _collision_warning_sequence);
+						snprintf(warning_flight_mode, sizeof(warning_flight_mode), "CW%d%c %s", severity_level, sequence_id, flight_mode);
+
+						this->SendTelemetryFlightMode(warning_flight_mode);
+
+					} else {
+						this->SendTelemetryFlightMode(flight_mode);
+					}
 				}
 
-				break;
-			}
+				if (collision_warning_severity <= 0 && _collision_warning_clear_frames_remaining > 0) {
+					_collision_warning_clear_frames_remaining--;
 
-			_telemetry_update_last = _input_rc.timestamp;
-			_next_type = (_next_type + 1) % num_data_types;
+					if (_collision_warning_clear_frames_remaining == 0) {
+						_collision_warning_was_active = false;
+					}
+				}
+
+				_telemetry_update_last = _input_rc.timestamp;
+			}
 		}
 	}
 
@@ -369,42 +366,6 @@ static inline void write_uint8_t(uint8_t *buf, int &offset, uint8_t value)
 	buf[offset++] = value;
 }
 
-/**
- * write an uint16_t value to a buffer at a given offset and increment the offset
- */
-static inline void write_uint16_t(uint8_t *buf, int &offset, uint16_t value)
-{
-	// Big endian
-	buf[offset] = value >> 8;
-	buf[offset + 1] = value & 0xff;
-	offset += 2;
-}
-
-/**
- * write an uint24_t value to a buffer at a given offset and increment the offset
- */
-static inline void write_uint24_t(uint8_t *buf, int &offset, int value)
-{
-	// Big endian
-	buf[offset] = value >> 16;
-	buf[offset + 1] = (value >> 8) & 0xff;
-	buf[offset + 2] = value & 0xff;
-	offset += 3;
-}
-
-/**
- * write an int32_t value to a buffer at a given offset and increment the offset
- */
-static inline void write_int32_t(uint8_t *buf, int &offset, int32_t value)
-{
-	// Big endian
-	buf[offset] = value >> 24;
-	buf[offset + 1] = (value >> 16) & 0xff;
-	buf[offset + 2] = (value >> 8) & 0xff;
-	buf[offset + 3] = value & 0xff;
-	offset += 4;
-}
-
 void CrsfRc::WriteFrameHeader(uint8_t *buf, int &offset, const crsf_frame_type_t type, const uint8_t payload_size)
 {
 	write_uint8_t(buf, offset, 0xc8); // this got changed from the address to the sync byte
@@ -416,49 +377,6 @@ void CrsfRc::WriteFrameCrc(uint8_t *buf, int &offset, const int buf_size)
 {
 	// CRC does not include the address and length
 	write_uint8_t(buf, offset, Crc8Calc(buf + 2, buf_size - 3));
-}
-
-bool CrsfRc::SendTelemetryBattery(const uint16_t voltage, const uint16_t current, const int fuel,
-				  const uint8_t remaining)
-{
-	uint8_t buf[(uint8_t)crsf_payload_size_t::battery_sensor + 4];
-	int offset = 0;
-	WriteFrameHeader(buf, offset, crsf_frame_type_t::battery_sensor, (uint8_t)crsf_payload_size_t::battery_sensor);
-	write_uint16_t(buf, offset, voltage);
-	write_uint16_t(buf, offset, current);
-	write_uint24_t(buf, offset, fuel);
-	write_uint8_t(buf, offset, remaining);
-	WriteFrameCrc(buf, offset, sizeof(buf));
-	return _uart->write((void *) buf, (size_t) offset);
-
-}
-
-bool CrsfRc::SendTelemetryGps(const int32_t latitude, const int32_t longitude, const uint16_t groundspeed,
-			      const uint16_t gps_heading, const uint16_t altitude, const uint8_t num_satellites)
-{
-	uint8_t buf[(uint8_t)crsf_payload_size_t::gps + 4];
-	int offset = 0;
-	WriteFrameHeader(buf, offset, crsf_frame_type_t::gps, (uint8_t)crsf_payload_size_t::gps);
-	write_int32_t(buf, offset, latitude);
-	write_int32_t(buf, offset, longitude);
-	write_uint16_t(buf, offset, groundspeed);
-	write_uint16_t(buf, offset, gps_heading);
-	write_uint16_t(buf, offset, altitude);
-	write_uint8_t(buf, offset, num_satellites);
-	WriteFrameCrc(buf, offset, sizeof(buf));
-	return _uart->write((void *) buf, (size_t) offset);
-}
-
-bool CrsfRc::SendTelemetryAttitude(const int16_t pitch, const int16_t roll, const int16_t yaw)
-{
-	uint8_t buf[(uint8_t)crsf_payload_size_t::attitude + 4];
-	int offset = 0;
-	WriteFrameHeader(buf, offset, crsf_frame_type_t::attitude, (uint8_t)crsf_payload_size_t::attitude);
-	write_uint16_t(buf, offset, pitch);
-	write_uint16_t(buf, offset, roll);
-	write_uint16_t(buf, offset, yaw);
-	WriteFrameCrc(buf, offset, sizeof(buf));
-	return _uart->write((void *) buf, (size_t) offset);
 }
 
 bool CrsfRc::SendTelemetryFlightMode(const char *flight_mode)
